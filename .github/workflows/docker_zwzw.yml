@@ -133,14 +133,10 @@ jobs:  # 工作流作业
           context: .
           file: ./Dockerfile
           target: runner
-          # 需要构建的多平台列表
           platforms: linux/amd64,linux/386,linux/arm64/v8,linux/arm/v7
           push: true
-          # 导入阶段一生成的缓存
           cache-from: type=gha,scope=builder-cache
-          # 使用本地 builder 阶段，而不是远程镜像
-          build-args: |
-            BUILDER_IMAGE=builder
+          # 不再需要 build-args
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
       # # 镜像打包为tar包

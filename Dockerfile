@@ -14,14 +14,14 @@ RUN npm run build
 # 阶段 2: 生产运行阶段（Nginx 托管静态文件）
 FROM nginx:alpine AS runner
 
-# 关键参数：默认指向本地 builder 阶段
-ARG BUILDER_IMAGE=builder
+# 注意：不再需要 ARG BUILDER_IMAGE，直接使用阶段名称 builder
+# 因为本地和 CI 中这个阶段的名称都是 builder，完全一致
 
-# 复制 Nginx 配置（如果你有自定义配置）
+# 复制 Nginx 配置（可选）
 # COPY nginx.conf /etc/nginx/nginx.conf
 
-# 从 builder 阶段复制静态文件
-COPY --from=$BUILDER_IMAGE --chown=nginx:nginx /app/out /usr/share/nginx/html
+# 直接使用 --from=builder，固定引用本地 builder 阶段
+COPY --from=builder --chown=nginx:nginx /app/out /usr/share/nginx/html
 
 USER nginx
 
