@@ -36,23 +36,11 @@ jobs:  # 工作流作业
       # 设置QEMU，用于构建多平台镜像
       - name: 设置 QEMU  # 步骤名称
         uses: docker/setup-qemu-action@v3  # 引用流程
-      # 启用 containerd 镜像存储：docker 驱动默认不支持多平台构建，
-      # 开启 containerd 镜像存储后 docker 驱动即可构建并推送多平台镜像，
-      # 同时保留「本地 load 的 builder-cache 对后续构建可见」的特性（无需推送临时镜像到 registry）
-      - name: 启用 containerd 镜像存储
-        run: |
-          sudo systemctl stop docker
-          sudo mkdir -p /etc/docker
-          echo '{ "features": { "containerd": true } }' | sudo tee /etc/docker/daemon.json
-          sudo systemctl start docker
-
       # 设置Docker Buildx，用于构建和推送多平台镜像
+      # 使用默认 docker-container 驱动（原生支持多平台构建）。
+      # 因不再依赖「本地 load 临时镜像」，故无需 docker 驱动、无需 containerd 存储、无需重启 daemon。
       - name: 设置 Docker Buildx  # 步骤名称
         uses: docker/setup-buildx-action@v3  # 引用流程
-        with:
-          # 使用 docker 驱动，使本地 load 的临时镜像对后续多平台构建可见（默认 docker-container 驱动看不到本地 daemon 镜像）
-          # 配合上方启用的 containerd 镜像存储，docker 驱动即可支持多平台构建
-          driver: docker
       # 获取当前日期(格式：年月日,如 20251009)
       - name: 获取当前日期
         id: get-date
@@ -128,20 +116,22 @@ jobs:  # 工作流作业
       #     echo "TAG_LATEST=${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:latest" >> $GITHUB_ENV
 
       # 阶段一：仅用 linux/amd64 构建 builder 阶段（生成架构无关的静态文件 /app/out）
-      # 仅 load 到本地 docker 守护进程，绝不推送到任何仓库/平台，仅供后续多平台 runner 阶段复制使用
-      - name: 构建 builder 阶段 (仅 linux/amd64, 本地)
+      # 推送到 GHCR 作为临时镜像（builder-cache 标签），供阶段二多平台 runner 复制使用；
+      # 不推送 Docker Hub，仅 GHCR。node 构建只跑这一次。
+      - name: 构建 builder 阶段 (仅 linux/amd64, 推送到 GHCR 临时标签)
         uses: docker/build-push-action@v5
         with:
           context: .  # 构建上下文
           file: ./Dockerfile  # 指定的Dockerfile
           target: builder  # 指定构建阶段
           platforms: linux/amd64  # 仅构建 amd64 平台
-          load: true  # 载入本地 docker 守护进程（不推送）
-          tags: builder-cache  # 仅本地使用的临时镜像标签（阶段二直接 COPY --from=builder-cache 引用之）
+          push: true  # 推送到 GHCR（使阶段二的多平台构建可拉取）
+          tags: ghcr.io/${{ github.repository }}:builder-cache  # GHCR 上的临时镜像标签（阶段二通过 --build-arg 引用）
           labels: ${{ steps.meta.outputs.labels }}  # 镜像标签
 
       # 阶段二：针对多平台构建 runner（nginx）阶段
-      # runner 直接 COPY --from=builder-cache 引用阶段一载入本地的临时镜像，复制其中的静态文件（跨架构复制文件，无需模拟执行）
+      # 通过 --build-arg BUILDER_IMAGE 指向阶段一推送到 GHCR 的临时镜像，复制其中的静态文件
+      # （跨架构复制文件，无需模拟执行 node 构建；node 构建仅在阶段一跑一次）
       - name: 编译并推送 ${{ github.event.repository.name }} 镜像 (多平台)
         uses: docker/build-push-action@v5
         with:
@@ -152,7 +142,9 @@ jobs:  # 工作流作业
           # platforms: linux/amd64,linux/386,linux/arm64/v8,linux/arm/v7,linux/arm/v6,linux/ppc64le,linux/riscv64,linux/s390x  # 构建的平台(正式构建,按需保留)
           push: true  # 推送到仓库
           # load: true  # 加载到本地(多构建平台不支持;若其它也需调用镜像则必须加载,如打包导出)
-          # 静态文件直接 COPY --from=builder-cache(阶段一载入本地的临时镜像),无需 build-arg
+          # 构建参数: 指定 runner 阶段 COPY --from 的源为阶段一推送到 GHCR 的临时镜像
+          build-args: |
+            BUILDER_IMAGE=ghcr.io/${{ github.repository }}:builder-cache
           # 推送的镜像标签(版本标签+latest)
           # tags: |  # 使用手动指定标签
           #   ${{ env.TAG }}
