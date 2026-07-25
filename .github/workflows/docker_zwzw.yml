@@ -126,11 +126,7 @@ jobs:  # 工作流作业
           target: builder  # 指定构建阶段
           platforms: linux/amd64  # 仅构建 amd64 平台
           load: true  # 载入本地 docker 守护进程（不推送）
-          # 显式传入 BUILDER_IMAGE=builder：--target builder 时 BuildKit 不会求值 runner 阶段内的 ARG 默认值，
-          # 必须靠 build-arg 这个构建级输入才能让 runner 阶段的 COPY --from=$BUILDER_IMAGE 解析为合法的 stage 名
-          build-args: |
-            BUILDER_IMAGE=builder
-          tags: builder-cache  # 仅本地使用的临时镜像标签
+          tags: builder-cache  # 仅本地使用的临时镜像标签（阶段二直接 COPY --from=builder-cache 引用之）
           labels: ${{ steps.meta.outputs.labels }}  # 镜像标签
 
       # 阶段二：针对多平台构建 runner（nginx）阶段
@@ -145,9 +141,7 @@ jobs:  # 工作流作业
           # platforms: linux/amd64,linux/386,linux/arm64/v8,linux/arm/v7,linux/arm/v6,linux/ppc64le,linux/riscv64,linux/s390x  # 构建的平台(正式构建,按需保留)
           push: true  # 推送到仓库
           # load: true  # 加载到本地(多构建平台不支持;若其它也需调用镜像则必须加载,如打包导出)
-          # 构建参数,用于指定 builder 阶段的临时镜像标签，避免每个平台都重新构建
-          build-args: |
-            BUILDER_IMAGE=builder-cache
+          # 静态文件直接 COPY --from=builder-cache(阶段一载入本地的临时镜像),无需 build-arg
           # 推送的镜像标签(版本标签+latest)
           # tags: |  # 使用手动指定标签
           #   ${{ env.TAG }}

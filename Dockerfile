@@ -12,14 +12,14 @@ COPY . .
 RUN npm run build
 
 # 阶段 2: 生产运行阶段(静态文件由 nginx 托管)
+# 静态文件复制自阶段一(--target builder --load)构建并载入本地的 builder-cache 镜像。
+# 该镜像含 /app/out,且为纯文件、与架构无关,故多平台构建时各平台只需构建 nginx,
+# 无需重复 node 构建。注意:此处写死镜像名 builder-cache(非 ARG 变量),
+# 避免 --target builder 阶段 BuildKit 不求值后期 stage 的 ARG 导致 COPY --from 解析失败。
 FROM nginx:alpine AS runner
 
-# 声明 ARG 使其对 COPY --from= 可见(必须在本 stage 内声明,全局 ARG 对此类指令无效)
-# 这里声明主要给单平台模式使用,多平台模式下会覆盖该参数
-ARG BUILDER_IMAGE=builder
-
 COPY nginx.conf /etc/nginx/nginx.conf
-COPY --from=$BUILDER_IMAGE --chown=nginx:nginx /app/out /usr/share/nginx/html
+COPY --from=builder-cache --chown=nginx:nginx /app/out /usr/share/nginx/html
 
 USER nginx
 
