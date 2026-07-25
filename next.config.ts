@@ -23,6 +23,10 @@ const withPWA = require("next-pwa")({
 
 const nextConfig: NextConfig = {
   /* config options here */
+  // 静态导出：生成纯静态文件到 /app/out，由 nginx 托管
+  output: "export",
+  // 静态导出不支持默认图片优化器，需关闭
+  images: { unoptimized: true },
 };
 
 export default withPWA(nextConfig);
