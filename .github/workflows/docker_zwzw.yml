@@ -119,11 +119,9 @@ jobs:  # 工作流作业
           context: .
           file: ./Dockerfile
           target: builder
-          platforms: linux/amd64
-          push: false  # 关键：不推送任何镜像
-          # 导出缓存到 GitHub Actions 缓存
+          # platforms: 可以省略，因为 Dockerfile 中已用 --platform 指定
+          push: false
           cache-to: type=gha,mode=max,scope=builder-cache
-          # 如果缓存已存在，也导入使用（加速构建）
           cache-from: type=gha,scope=builder-cache
 
       # 阶段二：构建 runner 阶段（多平台），并推送
