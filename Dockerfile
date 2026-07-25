@@ -12,7 +12,7 @@ COPY . .
 RUN npm run build
 
 # 阶段 2: 生产运行阶段（静态文件由 nginx 托管）
-FROM nginx:stable-alpine AS runner
+FROM nginx:alpine AS runner
 
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY --from=builder --chown=nginx:nginx /app/out /usr/share/nginx/html
