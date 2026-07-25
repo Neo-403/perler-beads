@@ -9,16 +9,16 @@ on:  # 定义触发工作流的事件
     #     description: '构建的版本号'  # 手动触发时输入的标签描述
     #     required: true  # 必须输入
     #     default: 'test'  # 默认标签为'test'
-  schedule:  # 定时触发
-    # 每天 UTC 时间 00:00 运行 (Cron 语法)
-    - cron: '0 0 * * *'
+  # schedule:  # 定时触发
+  #   # 每天 UTC 时间 00:00 运行 (Cron 语法)
+  #   - cron: '0 0 * * *'
   workflow_run:
     workflows: ["GoReleaser Workflow"]  # 指定工作流完成时触发
     types: [completed]  # 当工作流完成时触发
-  # push:
-  #   branches: [ "master" ]  # 当master分支有代码推送时触发
-  # pull_request:
-  #   branches: [ "master" ]  # 当master分支有代码拉取请求时触发
+  push:
+    branches: [ "master" ]  # 当master分支有代码推送时触发
+  pull_request:
+    branches: [ "master" ]  # 当master分支有代码拉取请求时触发
 
 permissions:  # 工作流权限
   contents: read  # 工作流需要读取仓库内容的权限
@@ -125,7 +125,8 @@ jobs:  # 工作流作业
       #     echo "TAG=${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:${{ env.TAG_NAME }}" >> $GITHUB_ENV
       #     echo "TAG_LATEST=${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:latest" >> $GITHUB_ENV
 
-      # 阶段一：构建 builder 阶段(仅 amd64),生成缓存
+      # #################### 核心步骤,构建镜像 ####################
+      # 阶段一：构建 builder 阶段(生成静态文件,无平台架构区别故仅 amd64),生成缓存
       - name: 构建 builder 阶段(生成缓存)  # 步骤名称
         uses: docker/build-push-action@v5  # 引用流程
         with:  # 参数
@@ -137,7 +138,7 @@ jobs:  # 工作流作业
           cache-to: type=gha,mode=max,scope=builder-cache  # 缓存到 Github Action
           cache-from: type=gha,scope=builder-cache  # 从 Github Action 中获取缓存
 
-      # 阶段二：构建 runner 阶段(多平台),并推送
+      # 阶段二：构建 runner 阶段(实际运行容器会有不同平台,故需要多平台构建),并推送
       - name: 构建并推送多平台镜像  # 步骤名称
         uses: docker/build-push-action@v5  # 引用流程
         with:  # 参数
