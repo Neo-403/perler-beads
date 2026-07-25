@@ -33,6 +33,10 @@ jobs:  # 工作流作业
         uses: actions/checkout@v4  # 引用流程
         # with:  # 参数
         #   fetch-depth: '0'  # 获取深度，0表示获取所有提交记录
+      # 计算小写的 GHCR 镜像基名（GHCR 要求仓库名全小写，github.repository 可能含大写，如 Neo-403）
+      - name: 设置小写镜像名称
+        run: echo "IMAGE_BASE=ghcr.io/${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+        shell: bash
       # 设置QEMU，用于构建多平台镜像
       - name: 设置 QEMU  # 步骤名称
         uses: docker/setup-qemu-action@v3  # 引用流程
@@ -58,13 +62,7 @@ jobs:  # 工作流作业
           else
             echo "TAG_NAME=${{ steps.get-date.outputs.date }}" >> $GITHUB_ENV
           fi
-      # 登录到 Docker Hub
-      - name: 登录 DockerHub  # 步骤名称
-        uses: docker/login-action@v3  # 引用流程
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}  # Docker Hub 用户名(需在secrets中配置)
-          password: ${{ secrets.DOCKERHUB_TOKEN }}  # Docker Hub Token(需在secrets中配置)
-      # 登录到 GitHub Container Registry
+      # 登录到 GitHub Container Registry（仅使用 GHCR，不依赖 Docker Hub）
       - name: 登录 GitHub Container Registry  # 步骤名称
         uses: docker/login-action@v3  # 引用流程
         with:
@@ -76,10 +74,9 @@ jobs:  # 工作流作业
         id: meta  # 步骤 ID,用于后续引用
         uses: docker/metadata-action@v5
         with:
-          # 同时指定Docker Hub和GHCR的镜像名称
+          # 仅使用 GHCR 镜像名称（不依赖 Docker Hub）；IMAGE_BASE 已确保全小写
           images: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}  # Docker Hub 镜像的名称(用户名/仓库名称)
-            ghcr.io/${{ github.repository }}  # GHCR 镜像的名称(ghcr.io/用户名称/仓库名称)
+            ${{ env.IMAGE_BASE }}  # GHCR 镜像的名称(全小写)
           # 默认的 latest 标签行为，可由下面的 tags 规则精确控制
           flavor: |
             latest=false
@@ -126,7 +123,7 @@ jobs:  # 工作流作业
           target: builder  # 指定构建阶段
           platforms: linux/amd64  # 仅构建 amd64 平台
           push: true  # 推送到 GHCR（使阶段二的多平台构建可拉取）
-          tags: ghcr.io/${{ github.repository }}:builder-cache  # GHCR 上的临时镜像标签（阶段二通过 --build-arg 引用）
+          tags: ${{ env.IMAGE_BASE }}:builder-cache  # GHCR 上的临时镜像标签（阶段二通过 --build-arg 引用）
           labels: ${{ steps.meta.outputs.labels }}  # 镜像标签
 
       # 阶段二：针对多平台构建 runner（nginx）阶段
@@ -144,7 +141,7 @@ jobs:  # 工作流作业
           # load: true  # 加载到本地(多构建平台不支持;若其它也需调用镜像则必须加载,如打包导出)
           # 构建参数: 指定 runner 阶段 COPY --from 的源为阶段一推送到 GHCR 的临时镜像
           build-args: |
-            BUILDER_IMAGE=ghcr.io/${{ github.repository }}:builder-cache
+            BUILDER_IMAGE=${{ env.IMAGE_BASE }}:builder-cache
           # 推送的镜像标签(版本标签+latest)
           # tags: |  # 使用手动指定标签
           #   ${{ env.TAG }}
