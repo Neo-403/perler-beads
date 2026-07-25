@@ -112,42 +112,37 @@ jobs:  # 工作流作业
       #     echo "TAG=${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:${{ env.TAG_NAME }}" >> $GITHUB_ENV
       #     echo "TAG_LATEST=${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:latest" >> $GITHUB_ENV
 
-      # 阶段一：仅用 linux/amd64 构建 builder 阶段（生成架构无关的静态文件 /app/out）
-      # 推送到 GHCR 作为临时镜像（builder-cache 标签），供阶段二多平台 runner 复制使用；
-      # 不推送 Docker Hub，仅 GHCR。node 构建只跑这一次。
-      - name: 构建 builder 阶段 (仅 linux/amd64, 推送到 GHCR 临时标签)
+      # 阶段一：构建 builder 阶段（仅 amd64），生成缓存
+      - name: 构建 builder 阶段（生成缓存）
         uses: docker/build-push-action@v5
         with:
-          context: .  # 构建上下文
-          file: ./Dockerfile  # 指定的Dockerfile
-          target: builder  # 指定构建阶段
-          platforms: linux/amd64  # 仅构建 amd64 平台
-          push: true  # 推送到 GHCR（使阶段二的多平台构建可拉取）
-          tags: ${{ env.IMAGE_BASE }}:builder-cache  # GHCR 上的临时镜像标签（阶段二通过 --build-arg 引用）
-          labels: ${{ steps.meta.outputs.labels }}  # 镜像标签
+          context: .
+          file: ./Dockerfile
+          target: builder
+          platforms: linux/amd64
+          push: false  # 关键：不推送任何镜像
+          # 导出缓存到 GitHub Actions 缓存
+          cache-to: type=gha,mode=max,scope=builder-cache
+          # 如果缓存已存在，也导入使用（加速构建）
+          cache-from: type=gha,scope=builder-cache
 
-      # 阶段二：针对多平台构建 runner（nginx）阶段
-      # 通过 --build-arg BUILDER_IMAGE 指向阶段一推送到 GHCR 的临时镜像，复制其中的静态文件
-      # （跨架构复制文件，无需模拟执行 node 构建；node 构建仅在阶段一跑一次）
-      - name: 编译并推送 ${{ github.event.repository.name }} 镜像 (多平台)
+      # 阶段二：构建 runner 阶段（多平台），并推送
+      - name: 构建并推送多平台镜像
         uses: docker/build-push-action@v5
         with:
-          context: .  # 构建上下文
-          file: ./Dockerfile  # 指定的Dockerfile
-          target: runner  # 指定构建阶段
-          platforms: linux/amd64,linux/386,linux/arm64/v8,linux/arm/v7  # 构建的平台(测试构建,少一些快一点),多架构一般取决于使用的基础镜像支持架构
-          # platforms: linux/amd64,linux/386,linux/arm64/v8,linux/arm/v7,linux/arm/v6,linux/ppc64le,linux/riscv64,linux/s390x  # 构建的平台(正式构建,按需保留)
-          push: true  # 推送到仓库
-          # load: true  # 加载到本地(多构建平台不支持;若其它也需调用镜像则必须加载,如打包导出)
-          # 构建参数: 指定 runner 阶段 COPY --from 的源为阶段一推送到 GHCR 的临时镜像
+          context: .
+          file: ./Dockerfile
+          target: runner
+          # 需要构建的多平台列表
+          platforms: linux/amd64,linux/386,linux/arm64/v8,linux/arm/v7
+          push: true
+          # 导入阶段一生成的缓存
+          cache-from: type=gha,scope=builder-cache
+          # 使用本地 builder 阶段，而不是远程镜像
           build-args: |
-            BUILDER_IMAGE=${{ env.IMAGE_BASE }}:builder-cache
-          # 推送的镜像标签(版本标签+latest)
-          # tags: |  # 使用手动指定标签
-          #   ${{ env.TAG }}
-          #   ${{ env.TAG_LATEST }}
-          tags: ${{ steps.meta.outputs.tags }}  # 使用metadata-action生成的标签
-          labels: ${{ steps.meta.outputs.labels }}  # 使用metadata-action生成的标签
+            BUILDER_IMAGE=builder
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
       # # 镜像打包为tar包
       # - name: 镜像打包为tar包  # 步骤名称
       #   # 注意 | 后注释会有问题故放在这
