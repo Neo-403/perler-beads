@@ -1,5 +1,6 @@
 # 阶段 1: 构建阶段（显式指定为 linux/amd64）
-FROM --platform=linux/amd64 node:22-bookworm-slim AS builder
+FROM node:22-bookworm-slim AS builder
+# FROM --platform=linux/amd64 node:22-bookworm-slim AS builder
 
 WORKDIR /app
 
