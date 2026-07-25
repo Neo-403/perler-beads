@@ -36,11 +36,22 @@ jobs:  # 工作流作业
       # 设置QEMU，用于构建多平台镜像
       - name: 设置 QEMU  # 步骤名称
         uses: docker/setup-qemu-action@v3  # 引用流程
+      # 启用 containerd 镜像存储：docker 驱动默认不支持多平台构建，
+      # 开启 containerd 镜像存储后 docker 驱动即可构建并推送多平台镜像，
+      # 同时保留「本地 load 的 builder-cache 对后续构建可见」的特性（无需推送临时镜像到 registry）
+      - name: 启用 containerd 镜像存储
+        run: |
+          sudo systemctl stop docker
+          sudo mkdir -p /etc/docker
+          echo '{ "features": { "containerd": true } }' | sudo tee /etc/docker/daemon.json
+          sudo systemctl start docker
+
       # 设置Docker Buildx，用于构建和推送多平台镜像
       - name: 设置 Docker Buildx  # 步骤名称
         uses: docker/setup-buildx-action@v3  # 引用流程
         with:
           # 使用 docker 驱动，使本地 load 的临时镜像对后续多平台构建可见（默认 docker-container 驱动看不到本地 daemon 镜像）
+          # 配合上方启用的 containerd 镜像存储，docker 驱动即可支持多平台构建
           driver: docker
       # 获取当前日期(格式：年月日,如 20251009)
       - name: 获取当前日期
@@ -130,7 +141,7 @@ jobs:  # 工作流作业
           labels: ${{ steps.meta.outputs.labels }}  # 镜像标签
 
       # 阶段二：针对多平台构建 runner（nginx）阶段
-      # 通过 BUILDER_IMAGE 指向上面 amd64 的临时镜像，复制其中的静态文件（跨架构复制文件，无需模拟执行）
+      # runner 直接 COPY --from=builder-cache 引用阶段一载入本地的临时镜像，复制其中的静态文件（跨架构复制文件，无需模拟执行）
       - name: 编译并推送 ${{ github.event.repository.name }} 镜像 (多平台)
         uses: docker/build-push-action@v5
         with:
