@@ -126,6 +126,10 @@ jobs:  # 工作流作业
           target: builder  # 指定构建阶段
           platforms: linux/amd64  # 仅构建 amd64 平台
           load: true  # 载入本地 docker 守护进程（不推送）
+          # 显式传入 BUILDER_IMAGE=builder：--target builder 时 BuildKit 不会求值 runner 阶段内的 ARG 默认值，
+          # 必须靠 build-arg 这个构建级输入才能让 runner 阶段的 COPY --from=$BUILDER_IMAGE 解析为合法的 stage 名
+          build-args: |
+            BUILDER_IMAGE=builder
           tags: builder-cache  # 仅本地使用的临时镜像标签
           labels: ${{ steps.meta.outputs.labels }}  # 镜像标签
 
