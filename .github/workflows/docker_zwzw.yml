@@ -39,6 +39,9 @@ jobs:  # 工作流作业
       # 设置Docker Buildx，用于构建和推送多平台镜像
       - name: 设置 Docker Buildx  # 步骤名称
         uses: docker/setup-buildx-action@v3  # 引用流程
+        with:
+          # 使用 docker 驱动，使本地 load 的临时镜像对后续多平台构建可见（默认 docker-container 驱动看不到本地 daemon 镜像）
+          driver: docker
       # 获取当前日期(格式：年月日,如 20251009)
       - name: 获取当前日期
         id: get-date
@@ -112,21 +115,35 @@ jobs:  # 工作流作业
       #   run: |
       #     echo "TAG=${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:${{ env.TAG_NAME }}" >> $GITHUB_ENV
       #     echo "TAG_LATEST=${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:latest" >> $GITHUB_ENV
-      # 构建并推送镜像(可同时推送多个镜像,多个镜像平台)
-      - name: 编译并推送 ${{ github.event.repository.name }}镜像  # 步骤名称
-        uses: docker/build-push-action@v5  # 引用流程
-        with:  # 参数
+
+      # 阶段一：仅用 linux/amd64 构建 builder 阶段（生成架构无关的静态文件 /app/out）
+      # 仅 load 到本地 docker 守护进程，绝不推送到任何仓库/平台，仅供后续多平台 runner 阶段复制使用
+      - name: 构建 builder 阶段 (仅 linux/amd64, 本地)
+        uses: docker/build-push-action@v5
+        with:
           context: .  # 构建上下文
           file: ./Dockerfile  # 指定的Dockerfile
+          target: builder  # 指定构建阶段
+          platforms: linux/amd64  # 仅构建 amd64 平台
+          load: true  # 载入本地 docker 守护进程（不推送）
+          tags: builder-cache  # 仅本地使用的临时镜像标签
+          labels: ${{ steps.meta.outputs.labels }}  # 镜像标签
+
+      # 阶段二：针对多平台构建 runner（nginx）阶段
+      # 通过 BUILDER_IMAGE 指向上面 amd64 的临时镜像，复制其中的静态文件（跨架构复制文件，无需模拟执行）
+      - name: 编译并推送 ${{ github.event.repository.name }} 镜像 (多平台)
+        uses: docker/build-push-action@v5
+        with:
+          context: .  # 构建上下文
+          file: ./Dockerfile  # 指定的Dockerfile
+          target: runner  # 指定构建阶段
           platforms: linux/amd64,linux/386,linux/arm64/v8,linux/arm/v7  # 构建的平台(测试构建,少一些快一点),多架构一般取决于使用的基础镜像支持架构
           # platforms: linux/amd64,linux/386,linux/arm64/v8,linux/arm/v7,linux/arm/v6,linux/ppc64le,linux/riscv64,linux/s390x  # 构建的平台(正式构建,按需保留)
           push: true  # 推送到仓库
           # load: true  # 加载到本地(多构建平台不支持;若其它也需调用镜像则必须加载,如打包导出)
-          # 注意 | 后注释会有问题故放在这
-          # 传递构建参数(覆盖 ARG ${{ github.event.repository.name }}_VERSION=3.5.0 配置参数)
-          # build-args: |
-          #   ${{ github.event.repository.name }}_VERSION=${{ env.TAG_NAME }}
-          # 注意 | 后注释会有问题故放在这
+          # 构建参数,用于指定 builder 阶段的临时镜像标签，避免每个平台都重新构建
+          build-args: |
+            BUILDER_IMAGE=builder-cache
           # 推送的镜像标签(版本标签+latest)
           # tags: |  # 使用手动指定标签
           #   ${{ env.TAG }}
